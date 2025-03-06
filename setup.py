@@ -16,11 +16,11 @@
 from setuptools import setup
 
 description = (
-    "GraphCast: Learning skillful medium-range global weather forecasting"
+    "Gencast_seasonal: Aadpting Graphcast"
 )
 
 setup(
-    name="graphcast",
+    name="gencast_seasonal",
     version="0.2.0.dev",
     description=description,
     long_description=description,
@@ -28,7 +28,7 @@ setup(
     license="Apache License, Version 2.0",
     keywords="GraphCast Weather Prediction",
     url="https://github.com/deepmind/graphcast",
-    packages=["graphcast"],
+    packages=["gencast_seasonal"],
     install_requires=[
         "cartopy",
         "chex",

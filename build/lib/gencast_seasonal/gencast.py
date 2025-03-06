@@ -58,7 +58,7 @@ TARGET_ATMOSPHERIC_VARS = (
     "geopotential",
     "u_component_of_wind",
     "v_component_of_wind",
-    "specific_humidity",
+    #"specific_humidity",
 )
 
 PRESSURE_LEVELS_SEASONAL_2 = (500, 850)
@@ -76,7 +76,7 @@ STATIC_VARS = (
 TASK = graphcast.TaskConfig(
     input_variables=(
         # GenCast doesn't take precipitation as input.
-        TARGET_SURFACE_NO_PRECIP_VARS
+        TARGET_SURFACE_VARS
         + TARGET_ATMOSPHERIC_VARS
         + GENERATED_FORCING_VARS
         + STATIC_VARS
@@ -117,8 +117,8 @@ class SamplerConfig:
         to remove slightly too much noise / blur too much. S_noise from the
         paper. Only used if stochastic_churn_rate > 0.
   """
-  max_noise_level: float = 80.
-  min_noise_level: float = 0.03
+  max_noise_level: float = 88.
+  min_noise_level: float = 0.02
   num_noise_levels: int = 20
   rho: float = 7.
   # Stochastic sampler settings.
@@ -131,8 +131,8 @@ class SamplerConfig:
 @chex.dataclass(frozen=True, eq=True)
 class NoiseConfig:
   training_noise_level_rho: float = 7.0
-  training_max_noise_level: float = 88.0
-  training_min_noise_level: float = 0.02
+  training_max_noise_level: float = 80.0
+  training_min_noise_level: float = 0.03
 
 
 @chex.dataclass(frozen=True, eq=True)
@@ -260,12 +260,9 @@ class GenCast(predictor_base.Predictor):
     noise = (
         samplers_utils.spherical_white_noise_like(targets) * noise_levels
     )
-    noise.to_netcdf("noise_saved_on_disk.nc")
     noisy_targets = targets + noise
-    noisy_targets = noise.to_netcdf("noisy_targets_saved_on_disk.nc")
     denoised_predictions = self._preconditioned_denoiser(
         inputs, noisy_targets, noise_levels, forcings)
-    noisy_targets = noise.to_netcdf("denoised_predictions_saved_on_disk.nc")
     loss, diagnostics = losses.weighted_mse_per_level(
         denoised_predictions,
         targets,
@@ -278,7 +275,7 @@ class GenCast(predictor_base.Predictor):
             # to the multi-level variables:
             '2m_temperature': 1.0,
             # MSLP key for NAO prediction and monthly forecasting via weather regimes, so overweigh it 
-            'mean_sea_level_pressure': 1.0,
+            'mean_sea_level_pressure': 1.5,
         },
     )
     loss *= self._loss_weighting(noise_levels)
