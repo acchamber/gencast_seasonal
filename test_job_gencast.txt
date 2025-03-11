@@ -1,0 +1,21 @@
+#!/bin/bash -e
+#SBATCH --partition=orchid
+#SBATCH --account=orchid
+#SBATCH --gres=gpu:2
+#SBATCH --job-name=test_gencast
+#SBATCH -o ~/gencast_seasonal/logs/%j.out 
+#SBATCH -e ~gencast_seasonal/logs/%j.err
+#SBATCH --time=02:00:00
+#SBATCH --mem=200G
+#SBATCH --tasks=2
+
+source ~/miniforge3/bin/activate
+conda activate gencast_env
+which python
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/users/achamber/miniforge3/lib/
+export LD_LIBRARY_PATH=/usr/local/cuda-12.1/lib64:$LD_LIBRARY_PATH
+export CUDA_HOME=/usr/local/cuda-12.1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95
+
+export JAX_TRACEBACK_FILTERING=off
+python test_job_gencast.py
