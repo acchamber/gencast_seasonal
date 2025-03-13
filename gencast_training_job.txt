@@ -1,11 +1,11 @@
 #!/bin/bash -e
 #SBATCH --partition=orchid
 #SBATCH --account=orchid
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --job-name=gencast_seas
 #SBATCH --time=24:00:00
 #SBATCH --mem=450G
-#SBATCH --tasks=8
+#SBATCH --tasks=12
 
 source ~/miniforge3/bin/activate
 conda activate gencast_env

@@ -3,8 +3,8 @@
 #SBATCH --account=orchid
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=test_gencast
-#SBATCH -o ~/gencast_seasonal/logs/%j.out 
-#SBATCH -e ~gencast_seasonal/logs/%j.err
+#SBATCH -o /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.out 
+#SBATCH -e /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.err
 #SBATCH --time=02:00:00
 #SBATCH --mem=200G
 #SBATCH --tasks=2

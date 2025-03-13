@@ -58,7 +58,7 @@ mesh_size=random_mesh_size,
 latent_size=random_latent_size,
 )
 
-source_files = glob("/gws/pw/j07/climateresilience/MLdata/glosea_600_slices/source*.nc")
+source_files = glob(f"{input_path}/glosea_600_slices/source*.nc")
 
 def get_training_data(file_path,lead_time=1,n_models_total=3,batch_n=1,fixed=False):
     
@@ -91,6 +91,7 @@ def get_training_data(file_path,lead_time=1,n_models_total=3,batch_n=1,fixed=Fal
     train_forcings = train_forcings.fillna(0)
 
     return train_inputs, train_targets, train_forcings
+
 
 def construct_wrapped_gencast():
   """Constructs and wraps the GenCast Predictor."""
@@ -159,10 +160,11 @@ train_inputs, train_targets, train_forcings = get_training_data(source_files[0])
 dir_prefix = "/home/users/achamber/gencast_seasonal/"
 with open(dir_prefix+"diffs_stddev_by_level.nc","rb") as f:
   diffs_stddev_by_level = xarray.load_dataset(f).astype(np.float32).compute()
-with open(dir_prefix+"mean_by_level.nc","rb") as f:
-  mean_by_level = xarray.load_dataset(f).astype(np.float32).compute()
-with open(dir_prefix+"stddev_by_level.nc","rb") as f:
-  stddev_by_level = xarray.load_dataset(f).astype(np.float32).compute()
+    
+mean_by_level = xarray.load_dataset(input_path+"/glosea_600_hc_mean_by_level.nc").compute()
+
+stddev_by_level = xarray.load_dataset(input_path+"/glosea_600_hc_stddev_by_level.nc").compute()
+
 with open(dir_prefix+"min_by_level.nc","rb") as f:
   min_by_level = xarray.load_dataset(f).astype(np.float32).compute()
 
@@ -179,10 +181,16 @@ if load_checkpoint is False:
 
 optimiser, opt_state = setup_optimizer()
 total_time = time.time()
-for x in range(1,1000):
+for x in range(1,500):
     print(f"training attempt {x}",flush=True)
     start_time = time.time()
+    
     train_inputs, train_targets, train_forcings = get_training_data(source_files[x])
+    # train_inputs2, train_targets2, train_forcings2 =  get_training_data(source_files[x])
+    # train_inputs = xarray.concat([train_inputs,train_inputs2],dim="batch")
+    # train_targets =  xarray.concat([train_targets,train_targets2],dim="batch")
+    # train_forcings = xarray.concat([train_forcings,train_forcings2],dim="batch")
+    
     print(f"{time.time() - start_time} seconds to prepare batch",flush=True)
     loss, diagnostics, next_state, grads = grads_fn_jitted(params, state, train_inputs, train_targets, train_forcings)
     mean_grad = np.mean(jax.tree_util.tree_flatten(jax.tree_util.tree_map(lambda x: np.abs(x).mean(), grads))[0])
