@@ -3,7 +3,7 @@
 #SBATCH --account=orchid
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=gencast_seas
-#SBATCH --time=24:00:00
+#SBATCH --time=6:00:00
 #SBATCH --mem=450G
 #SBATCH --tasks=12
 

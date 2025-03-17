@@ -181,7 +181,8 @@ if load_checkpoint is False:
 
 optimiser, opt_state = setup_optimizer()
 total_time = time.time()
-for x in range(1,500):
+starting_x = 1
+for x in range(starting_x,starting_x+260):
     print(f"training attempt {x}",flush=True)
     start_time = time.time()
     
@@ -201,7 +202,7 @@ for x in range(1,500):
     params = optax.apply_updates(params, updates)
     print(f"{time.time() - start_time} seconds to update gradients",flush=True)
 
-print(f"{time.time() - total_time} seconds total for 1000 updates",flush=True)
+print(f"{time.time() - total_time} seconds total for 260 updates",flush=True)
 
 def flatten_dict(d, parent_key='', sep='//'):
     items = []
