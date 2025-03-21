@@ -6,6 +6,8 @@ import math
 import random
 import time
 import reprlib
+import os
+import cloudpickle
 from glob import glob
 from typing import Optional
 import haiku as hk
@@ -30,16 +32,24 @@ from gencast_seasonal import nan_cleaning
 
 
 input_path = "/gws/pw/j07/climateresilience/MLdata"
+params_path = "/gws/pw/j07/climateresilience/MLdata/params"
+states_path = "/gws/pw/j07/climateresilience/MLdata/states"
 
-latent_value_options = [int(2**i) for i in range(4, 10)]
 random_latent_size = 256 # 512 base, testing speedup from lower
 random_attention_type = "triblockdiag_mha"
-random_mesh_size = 5 #5 base, testing speedup from lower
+random_mesh_size = 5 #5 base
 random_num_heads = 4 #4
 random_attention_k_hop = 8 #16
 random_resolution = "1p0"
 
-load_checkpoint = False # False if new run, True if contining
+try:
+    load_checkpoint = os.environ["LOAD_CHECKPOINT"]
+    if load_checkpoint == "False":
+        load_checkpoint = False
+    elif load_checkpoint == "True":
+        load_checkpoint = True
+except: 
+    load_checkpoint = False # False if new run, True if contining
 state = {}
 task_config = gencast.TASK
 # Use default values.
@@ -57,8 +67,9 @@ sparse_transformer_config = denoiser.SparseTransformerConfig(
 mesh_size=random_mesh_size,
 latent_size=random_latent_size,
 )
-
 source_files = glob(f"{input_path}/glosea_600_slices/source*.nc")
+params_files = glob(f"{params_path}/training_test*.npz")
+state_files = glob(f"{states_path}/*.pkl")
 
 def get_training_data(file_path,lead_time=1,n_models_total=3,batch_n=1,fixed=False):
     
@@ -92,6 +103,49 @@ def get_training_data(file_path,lead_time=1,n_models_total=3,batch_n=1,fixed=Fal
 
     return train_inputs, train_targets, train_forcings
 
+def flatten_dict(d, parent_key='', sep='//'):
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def save_model_params(d, file_path):
+    flat_dict = flatten_dict(d)
+    # Convert JAX arrays to NumPy for saving
+    np_dict = {k: np.array(v) if isinstance(v, jnp.ndarray) else v for k, v in flat_dict.items()}
+    np.savez(file_path, **np_dict)
+
+def save_model_optimiser(state,file_path):
+    with open(file_path,"wb") as f:
+        cloudpickle.dump(state, f)
+    return file_path
+
+def unflatten_dict(d, sep='//'):
+    result_dict = {}
+    for flat_key, value in d.items():
+        keys = flat_key.split(sep)
+        d = result_dict
+        for key in keys[:-1]:
+            if key not in d:
+                d[key] = {}
+            d = d[key]
+        d[keys[-1]] = value
+    return result_dict
+
+def load_model_params(file_path):
+    with np.load(file_path, allow_pickle=True) as npz_file:
+        # Convert NumPy arrays back to JAX arrays
+        jax_dict = {k: jnp.array(v) for k, v in npz_file.items()}
+    return unflatten_dict(jax_dict)
+
+def load_model_optimiser(file_path):
+    with open(file_path, 'rb') as f:
+        optimiser_n, opt_state_n = cloudpickle.load(f)
+    return optimiser_n, opt_state_n 
 
 def construct_wrapped_gencast():
   """Constructs and wraps the GenCast Predictor."""
@@ -137,15 +191,15 @@ def grads_fn(params, state, inputs, targets, forcings):
 
 def setup_optimizer():
     lr_schedule = optax.schedules.warmup_cosine_decay_schedule(
-    init_value = 0.01,
-    peak_value = .03,
+    init_value = 0.001,
+    peak_value = .003,
     warmup_steps = 1000,
     decay_steps = 1000000,
     end_value = 0.0,
     exponent = 0.1,)
-    #lr = 0.001
+    lr_schedule = 0.003 # forcing lr to peak for short-term training
     
-    optimiser = optax.adam(lr_schedule, b1=0.9, b2=0.999, eps=1e-8)
+    optimiser = optax.adamw(lr_schedule, b1=0.9, b2=0.999, eps=1e-8)
     opt_state = optimiser.init(params)
     return optimiser, opt_state
 
@@ -156,7 +210,10 @@ loss_fn_jitted = jax.jit(
 grads_fn_jitted = jax.jit(grads_fn)
 
 train_inputs, train_targets, train_forcings = get_training_data(source_files[0])
-
+# train_inputs2, train_targets2, train_forcings2 =  get_training_data(source_files[0])
+# train_inputs = xarray.concat([train_inputs,train_inputs2],dim="batch")
+# train_targets =  xarray.concat([train_targets,train_targets2],dim="batch")
+# train_forcings = xarray.concat([train_forcings,train_forcings2],dim="batch")
 dir_prefix = "/home/users/achamber/gencast_seasonal/"
 with open(dir_prefix+"diffs_stddev_by_level.nc","rb") as f:
   diffs_stddev_by_level = xarray.load_dataset(f).astype(np.float32).compute()
@@ -169,23 +226,30 @@ with open(dir_prefix+"min_by_level.nc","rb") as f:
   min_by_level = xarray.load_dataset(f).astype(np.float32).compute()
 
 if load_checkpoint is False:
-      params = None
-      init_jitted = jax.jit(loss_fn.init)
-      params, state = init_jitted(
+    params = None
+    init_jitted = jax.jit(loss_fn.init)
+    params, state = init_jitted(
           rng=jax.random.PRNGKey(0),
           inputs=train_inputs,
           targets=train_targets,
           forcings=train_forcings,
       )
+    optimiser, opt_state = setup_optimizer()
+else: # load newest params_file
+    params = load_model_params(max(params_files, key=os.path.getctime))
+    optimiser, opt_state = load_model_optimiser(max(state_files, key=os.path.getctime))
 
 
-optimiser, opt_state = setup_optimizer()
 total_time = time.time()
-starting_x = 1
-for x in range(starting_x,starting_x+260):
+try: # if there's a env variable for total trainings
+    starting_x = int(os.environ["TOTAL_N"])
+except:
+    starting_x = 1 # set to totalN  env var for cylc loop
+for x in range(starting_x,starting_x+200):
+    
     print(f"training attempt {x}",flush=True)
     start_time = time.time()
-    
+    x = x % 1148 
     train_inputs, train_targets, train_forcings = get_training_data(source_files[x])
     # train_inputs2, train_targets2, train_forcings2 =  get_training_data(source_files[x])
     # train_inputs = xarray.concat([train_inputs,train_inputs2],dim="batch")
@@ -198,26 +262,10 @@ for x in range(starting_x,starting_x+260):
     print(f"Loss: {loss:.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
     print(diagnostics,flush=True)
     print(f"{time.time() - start_time} seconds to calculate gradients",flush=True)
-    updates, opt_state = optimiser.update(grads, opt_state)
+    updates, opt_state = optimiser.update(grads, opt_state, params)
     params = optax.apply_updates(params, updates)
     print(f"{time.time() - start_time} seconds to update gradients",flush=True)
+print(f"{time.time() - total_time} seconds total for 200 updates",flush=True)
 
-print(f"{time.time() - total_time} seconds total for 260 updates",flush=True)
-
-def flatten_dict(d, parent_key='', sep='//'):
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
-
-def save_model_params(d, file_path):
-    flat_dict = flatten_dict(d)
-    # Convert JAX arrays to NumPy for saving
-    np_dict = {k: np.array(v) if isinstance(v, jnp.ndarray) else v for k, v in flat_dict.items()}
-    np.savez(file_path, **np_dict)
-
-save_model_params(params, "training_test_params.npz")
+save_model_params(params, f"{params_path}/training_test_params{starting_x}.npz")
+save_model_optimiser((optimiser,opt_state), f"{states_path}/training_test_state_{starting_x}.pkl")
