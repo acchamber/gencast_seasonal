@@ -1,7 +1,7 @@
 #!/bin/bash -e
 #SBATCH --partition=orchid
 #SBATCH --account=orchid
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --job-name=gencast_seas
 #SBATCH -o /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.out 
 #SBATCH -e /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.err
@@ -17,7 +17,7 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=0.90
 export CUDA_HOME=/usr/local/cuda-12.1
 export PATH=/usr/local/cuda-12.1/bin:$PATH
 
-export TOTAL_N=1310
-export LOAD_CHECKPOINT=True
+export TOTAL_N=200
+export LOAD_CHECKPOINT=False
 
 python gencast_seasonal_training.py

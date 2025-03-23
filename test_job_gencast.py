@@ -142,16 +142,16 @@ def loss_fn(inputs, targets, forcings):
   )
 
 
-def grads_fn(params, state, inputs, targets, forcings):
-  def _aux(params, state, i, t, f):
+def grads_fn(rng, inputs, targets, forcings):
+  def _aux(params, state, rng, i, t, f):
     (loss, diagnostics), next_state = loss_fn.apply(
-        params, state, jax.random.PRNGKey(0), i, t, f
+        params, state, rng, i, t, f
     )
     return loss, (diagnostics, next_state)
 
   (loss, (diagnostics, next_state)), grads = jax.value_and_grad(
       _aux, has_aux=True
-  )(params, state, inputs, targets, forcings)
+  )(params, state, rng, inputs, targets, forcings)
   return loss, diagnostics, next_state, grads
 
 
@@ -176,22 +176,14 @@ run_forward_jitted = jax.jit(
 run_forward_pmap = xarray_jax.pmap(run_forward_jitted, dim="sample")
 
 grad_fn_pmap = xarray_jax.pmap(grads_fn_jitted, dim="device")
-
-loss, diagnostics = loss_fn_jitted(
-    jax.random.PRNGKey(0),
-    train_inputs,
-    train_targets,
-    train_forcings)
-print("Loss:", float(loss),flush=True)
-print(diagnostics,flush=True)
+keys = jax.random.split(jax.random.PRNGKey(0),4)
 
 start_time = time.time()
 loss, diagnostics, next_state, grads = grads_fn_jitted(
-    params=params,
-    state=state,
-    inputs=train_inputs,
-    targets=train_targets,
-    forcings=train_forcings)
+    keys[0],
+    train_inputs,
+    train_targets,
+    train_forcings)
 mean_grad = np.mean(jax.tree_util.tree_flatten(jax.tree_util.tree_map(lambda x: np.abs(x).mean(), grads))[0])
 print(f"Loss: {loss:.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
 print(f" time:{time.time() - start_time}",flush=True)
@@ -214,9 +206,9 @@ def memory_usage():
             status.close()
     return result
 print(memory_usage(),flush=True)
-train_inputs2 = train_inputs.expand_dims({"device":2},axis=0)
-train_targets2 = train_targets.expand_dims({"device":2},axis=0)
-train_forcings2 = train_forcings.expand_dims({"device":2},axis=0)
+train_inputs2 = train_inputs.expand_dims({"device":4},axis=0)
+train_targets2 = train_targets.expand_dims({"device":4},axis=0)
+train_forcings2 = train_forcings.expand_dims({"device":4},axis=0)
 
 print("Train Inputs:  ", train_inputs2.dims.mapping)
 print("Train Targets: ", train_targets2.dims.mapping)
@@ -224,14 +216,13 @@ print("Train Forcings:", train_forcings2.dims.mapping)
 
 start_time = time.time()
 loss, diagnostics, next_state, grads = grad_fn_pmap(
-    params,
-    state,
+    keys,
     train_inputs2,
     train_targets2,
     train_forcings2)
-grads = jax.lax.pmean(grads, axis_name='device')
+print(memory_usage(),flush=True)
 mean_grad = np.mean(jax.tree_util.tree_flatten(jax.tree_util.tree_map(lambda x: np.abs(x).mean(), grads))[0])
-print(f"Loss: {loss:.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
+print(f"Loss: {np.mean(loss):.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
 print(f" time:{time.time() - start_time}",flush=True)
 
 

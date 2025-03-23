@@ -1,13 +1,13 @@
 #!/bin/bash -e
 #SBATCH --partition=orchid
 #SBATCH --account=orchid
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:4
 #SBATCH --job-name=test_gencast
-#SBATCH -o /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.out 
-#SBATCH -e /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.err
+#SBATCH -o /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/test_job%j.out 
+#SBATCH -e /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/test_job%j.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=200G
-#SBATCH --tasks=2
+#SBATCH --mem=300G
+#SBATCH --tasks=4
 
 source ~/miniforge3/bin/activate
 conda activate gencast_env
