@@ -5,9 +5,9 @@
 #SBATCH --job-name=gencast_seas
 #SBATCH -o /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.out 
 #SBATCH -e /home/users/achamber/gencast_seasonal/gencast_seasonal/logs/%j.err
-#SBATCH --time=6:00:00
-#SBATCH --mem=500G
-#SBATCH --tasks=8
+#SBATCH --time=8:00:00
+#SBATCH --mem=499G
+#SBATCH --tasks=4
 
 source ~/miniforge3/bin/activate
 conda activate gencast_env
@@ -17,7 +17,7 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=0.90
 export CUDA_HOME=/usr/local/cuda-12.1
 export PATH=/usr/local/cuda-12.1/bin:$PATH
 
-export TOTAL_N=200
+export TOTAL_N=22
 export LOAD_CHECKPOINT=False
 
 python gencast_seasonal_training.py

@@ -189,7 +189,7 @@ def loss_fn(inputs, targets, forcings):
       (loss, diagnostics),
   )
 
-def grads_fn(rng, inputs, targets, forcings):
+def grads_fn(params, state, rng, inputs, targets, forcings):
   def _aux(params, state, rng, i, t, f):
     (loss, diagnostics), next_state = loss_fn.apply(
         params, state, rng, i, t, f
@@ -209,7 +209,7 @@ def setup_optimizer():
     decay_steps = 1000000,
     end_value = 0.0,
     exponent = 0.1,)
-    lr_schedule = 0.003 # forcing lr to peak for short-term training
+    #lr_schedule = 0.003 # forcing lr to peak for short-term training
     
     optimiser = optax.adamw(lr_schedule, b1=0.9, b2=0.999, eps=1e-8)
     opt_state = optimiser.init(params)
@@ -221,7 +221,7 @@ loss_fn_jitted = jax.jit(
 
 grads_fn_jitted = jax.jit(grads_fn)
 grads_fn_pmap =  xarray_jax.pmap(grads_fn_jitted,dim="device")
-keys = jax.random.split(jax.random.PRNGKey(0),2)
+keys = jax.random.split(jax.random.PRNGKey(0),jax.local_device_count())
 # train_inputs2, train_targets2, train_forcings2 =  get_training_data(source_files[0])
 # train_inputs = xarray.concat([train_inputs,train_inputs2],dim="batch")
 # train_targets =  xarray.concat([train_targets,train_targets2],dim="batch")
@@ -247,6 +247,8 @@ if load_checkpoint is False:
           targets=train_targets,
           forcings=train_forcings,
       )
+    num_devices = jax.local_device_count()
+    params = jax.tree.map(lambda x: np.stack([x] * num_devices), params)
     optimiser, opt_state = setup_optimizer()
 else: # load newest params_file
     params = load_model_params(max(params_files, key=os.path.getctime))
@@ -258,29 +260,32 @@ try: # if there's a env variable for total trainings
     starting_x = int(os.environ["TOTAL_N"])
 except:
     starting_x = 1 # set to totalN  env var for cylc loop
-for n in range(starting_x,starting_x+1000):
+for n in range(starting_x,starting_x+10000):
     
     print(f"training attempt {n}",flush=True)
     start_time = time.time()
     x = random.randint(0,1147)
     train_inputs1, train_targets1, train_forcings1 =  get_training_data(source_files[x])
     train_inputs2, train_targets2, train_forcings2 =  get_training_data(source_files[x])
-    #train_inputs3, train_targets3, train_forcings3 =  get_training_data(source_files[x_list[2]],fixed=True,fixed_list=model_numbers)
-    #train_inputs4, train_targets4, train_forcings4 =  get_training_data(source_files[x_list[3]],fixed=True,fixed_list=model_numbers)
-    train_inputs = xarray.concat([train_inputs1,train_inputs2],dim="device")
-    train_targets = xarray.concat([train_targets1,train_targets2],dim="device")
-    train_forcings = xarray.concat([train_forcings1,train_forcings2],dim="device")
+    train_inputs3, train_targets3, train_forcings3 = get_training_data(source_files[x])
+    #train_inputs4, train_targets4, train_forcings4 = get_training_data(source_files[x])
+    train_inputs = xarray.concat([train_inputs1, train_inputs2, train_inputs3],dim="device")
+    train_targets = xarray.concat([train_targets1, train_targets2, train_targets3],dim="device")
+    train_forcings = xarray.concat([train_forcings1, train_forcings2, train_forcings3],dim="device")
+    #train_inputs, train_targets, train_forcings =  get_training_data(source_files[x])
     
     print(f"{time.time() - start_time} seconds to prepare batch",flush=True)
-    loss, diagnostics, next_state, grads = grads_fn_pmap(keys, train_inputs, train_targets, train_forcings)
+    loss, diagnostics, next_state, grads = grads_fn_pmap(params, state, keys, train_inputs, train_targets, train_forcings)
+    #loss, diagnostics, next_state, grads = grads_fn_jitted(params, state, keys[0], train_inputs, train_targets, train_forcings)
     mean_grad = np.mean(jax.tree_util.tree_flatten(jax.tree_util.tree_map(lambda x: np.abs(x).mean(), grads))[0])
-    print(f"Loss: {np.mean(loss):.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
+    print(f"Losses: {loss}",flush=True)
+    print(f"Mean Loss: {np.mean(loss):.4f}, Mean |grad|: {mean_grad:.6f}",flush=True)
     print(diagnostics,flush=True)
     print(f"{time.time() - start_time} seconds to calculate gradients",flush=True)
     updates, opt_state = optimiser.update(grads, opt_state, params)
     params = optax.apply_updates(params, updates)
     print(f"{time.time() - start_time} seconds to update gradients",flush=True)
-print(f"{time.time() - total_time} seconds total for 200 updates",flush=True)
+print(f"{time.time() - total_time} seconds total for 10000 updates",flush=True)
 
 save_model_params(params, f"{params_path}/training_test_params{starting_x}.npz")
 save_model_optimiser((optimiser,opt_state), f"{states_path}/training_test_state_{starting_x}.pkl")
